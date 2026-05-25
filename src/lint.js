@@ -16,21 +16,22 @@ function parseArgs(args) {
     warnOnly: false,
     reporter: 'terminal',
     configPath: null,
-    targetDir: '.',
+    targets: [],
   };
   for (const a of args) {
     if (a === '--strict') opts.strict = true;
     else if (a === '--warn-only') opts.warnOnly = true;
     else if (a.startsWith('--reporter=')) opts.reporter = a.slice('--reporter='.length);
     else if (a.startsWith('--config=')) opts.configPath = a.slice('--config='.length);
-    else if (!a.startsWith('--')) opts.targetDir = a;
+    else if (!a.startsWith('--')) opts.targets.push(a);
   }
+  if (!opts.targets.length) opts.targets.push('.');
   return opts;
 }
 
 function run({ cwd, args }) {
   const opts = parseArgs(args);
-  const targetDir = path.resolve(cwd, opts.targetDir);
+  const resolvedTargets = opts.targets.map((t) => path.resolve(cwd, t));
   const config = loadConfig({ cwd, explicitPath: opts.configPath });
 
   if (!config.rules.length) {
@@ -42,7 +43,16 @@ function run({ cwd, args }) {
     return opts.warnOnly ? 0 : 2;
   }
 
-  const files = collectFiles(targetDir, config);
+  const seen = new Set();
+  const files = [];
+  for (const target of resolvedTargets) {
+    for (const file of collectFiles(target, config)) {
+      if (!seen.has(file)) {
+        seen.add(file);
+        files.push(file);
+      }
+    }
+  }
 
   const results = [];
   let totalErrors = 0;
@@ -60,7 +70,7 @@ function run({ cwd, args }) {
 
   const reporter = reporters[opts.reporter] || reporters.terminal;
   reporter({
-    targetDir,
+    targetDir: resolvedTargets.length === 1 ? resolvedTargets[0] : resolvedTargets.join(', '),
     filesScanned: files.length,
     filesWithIssues: results.length,
     totalErrors,
