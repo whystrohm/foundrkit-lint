@@ -1,0 +1,43 @@
+{
+  "name": "foundrkit-lint",
+  "version": "0.1.0",
+  "description": "Brand voice linter for founder-led companies. Catches AI slop and off-brand drift before it ships. Rules-as-code, CI-ready, zero dependencies.",
+  "keywords": [
+    "lint",
+    "brand-voice",
+    "content-lint",
+    "ai-detection",
+    "founder",
+    "voice",
+    "writing",
+    "prose-lint",
+    "ci"
+  ],
+  "homepage": "https://github.com/whystrohm/foundrkit-lint",
+  "bugs": "https://github.com/whystrohm/foundrkit-lint/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whystrohm/foundrkit-lint.git"
+  },
+  "license": "MIT",
+  "author": "Yuri Strohm (https://whystrohm.com)",
+  "type": "commonjs",
+  "main": "src/lint.js",
+  "bin": {
+    "foundrkit-lint": "bin/foundrkit-lint.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "scripts": {
+    "test": "node bin/foundrkit-lint.js examples/ --warn-only",
+    "lint:self": "node bin/foundrkit-lint.js src/ --warn-only"
+  }
+}

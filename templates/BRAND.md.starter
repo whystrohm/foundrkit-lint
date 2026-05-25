@@ -1,0 +1,61 @@
+# BRAND.md
+
+> The source of truth for how this company writes. Read this before writing anything that ships under the brand. The linter (`foundrkit-lint`) enforces the hard rules below; the rest is judgment.
+
+## 1. Voice anchor
+
+Who is the founder, and what does their voice sound like at its sharpest? One paragraph. Plain language.
+
+_Example: "Direct. Executive. No hedging. Speaks in numbers and verbs, not adjectives. Refuses corporate softeners. Uses short sentences and middle dots, not em-dashes."_
+
+## 2. Five tone dimensions
+
+Rate each on a 1–5 scale. Pin a number, not a range.
+
+| Dimension       | Score | Note |
+|-----------------|-------|------|
+| Formality       |       | 1 = casual · 5 = boardroom |
+| Confidence      |       | 1 = soft · 5 = assertive |
+| Warmth          |       | 1 = cold · 5 = familiar |
+| Specificity     |       | 1 = abstract · 5 = numeric |
+| Energy          |       | 1 = measured · 5 = urgent |
+
+## 3. Words we use
+
+The vocabulary the founder reaches for. Replace nothing. Add only words you've heard the founder say in the last 90 days.
+
+- ...
+
+## 4. Words we don't
+
+The phrases the founder will not ship. These become `foundrkit-lint` rules.
+
+- ...
+
+## 5. Sentence rules
+
+- Max sentence length: __ words
+- Em-dash policy: use / replace with `·` / replace with `,`
+- Contractions: yes / no
+- Ellipses: yes / no
+- Adverb policy: avoid / fine
+- First-person plural ("we"): default voice / brand only
+
+## 6. Structure rules
+
+- Opening line: what does every piece of writing have to do in the first sentence?
+- Closing line: what posture do we leave the reader in?
+- Headings: title case / sentence case / lowercase
+- CTAs: verb-first or noun-first
+
+## 7. Hard nos
+
+Things that get a piece killed, not edited.
+
+- ...
+
+---
+
+_This file pairs with `foundrkit.config.js` (the lint rules) and `forbidden.json` (the runtime list).
+The full extracted rule set comes from running [Foundrkit Pro](https://whystrohm.com/scan) on the
+founder's existing writing._
