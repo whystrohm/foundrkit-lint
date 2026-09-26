@@ -320,3 +320,131 @@ test('--help exits 0', () => {
   assert.equal(res.code, 0);
   assert.match(res.stdout, /Usage:/);
 });
+
+// ─── brand/ folder and the foundrkit-rules contract ────────────────────
+
+const FIXTURES = path.join(__dirname, 'fixtures');
+const RULES_SCHEMA = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'contracts', 'foundrkit-rules.v1.schema.json'), 'utf8')
+);
+
+// A small JSON Schema check for the keywords the vendored schemas use:
+// type, const, enum, required, properties, additionalProperties: false,
+// items, minItems, minLength. Returns a list of problems.
+function schemaErrors(schema, value, at = '(root)') {
+  const errors = [];
+  const typeOf = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
+  if (schema.type && typeOf(value) !== schema.type) return [`${at}: expected ${schema.type}`];
+  if ('const' in schema && value !== schema.const) errors.push(`${at}: expected ${JSON.stringify(schema.const)}`);
+  if (schema.enum && !schema.enum.includes(value)) errors.push(`${at}: not one of ${schema.enum.join(', ')}`);
+  if (typeof value === 'string' && schema.minLength && value.length < schema.minLength) errors.push(`${at}: too short`);
+  if (Array.isArray(value)) {
+    if (schema.minItems && value.length < schema.minItems) errors.push(`${at}: too few items`);
+    if (schema.items) value.forEach((v, i) => errors.push(...schemaErrors(schema.items, v, `${at}/${i}`)));
+  }
+  if (typeOf(value) === 'object') {
+    for (const key of schema.required || []) if (!(key in value)) errors.push(`${at}: missing ${key}`);
+    for (const [key, v] of Object.entries(value)) {
+      const sub = (schema.properties || {})[key];
+      if (sub) errors.push(...schemaErrors(sub, v, `${at}/${key}`));
+      else if (schema.additionalProperties === false) errors.push(`${at}: unexpected ${key}`);
+    }
+  }
+  return errors;
+}
+
+function rulesFile(rules, extra = {}) {
+  return JSON.stringify({ contract: 'foundrkit-rules', version: '1', brand: 'Example', rules, ...extra });
+}
+
+test('the schema check catches a bad rules file', () => {
+  assert.deepEqual(schemaErrors(RULES_SCHEMA, JSON.parse(rulesFile([{ pattern: 'x', severity: 'error', source: 'manual' }]))), []);
+  const bad = schemaErrors(RULES_SCHEMA, { contract: 'foundrkit-rules', version: 1, brand: 'x', rules: [{ pattern: 'x', severity: 'block' }] });
+  assert.ok(bad.some((e) => /version/.test(e)));
+  assert.ok(bad.some((e) => /severity/.test(e)));
+  assert.ok(bad.some((e) => /missing source/.test(e)));
+});
+
+test('the vendored example passes the vendored schema', () => {
+  const example = JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'foundrkit-rules.example.json'), 'utf8'));
+  assert.deepEqual(schemaErrors(RULES_SCHEMA, example), []);
+});
+
+test('brand/foundrkit.rules.json is found when cwd has no other config', () => {
+  const dir = project({
+    'brand/foundrkit.rules.json': rulesFile([{ pattern: 'leverage', severity: 'error', source: 'manual' }]),
+    'page.md': 'We leverage it.\n',
+  });
+  const { code, report } = json(['page.md'], dir);
+  assert.equal(code, 1);
+  assert.equal(report.config, path.join('brand', 'foundrkit.rules.json'));
+});
+
+test('a config file in cwd wins over brand/foundrkit.rules.json', () => {
+  const dir = project({
+    'foundrkit.config.js': config(['synergy']),
+    'brand/foundrkit.rules.json': rulesFile([{ pattern: 'leverage', severity: 'error', source: 'manual' }]),
+    'page.md': 'leverage synergy\n',
+  });
+  const { report } = json(['page.md'], dir);
+  assert.equal(report.config, 'foundrkit.config.js');
+});
+
+test('brand/foundrkit.rules.json wins over a config in a scanned directory', () => {
+  const dir = project({
+    'brand/foundrkit.rules.json': rulesFile([{ pattern: 'leverage', severity: 'error', source: 'manual' }]),
+    'site/foundrkit.config.js': config(['synergy']),
+    'site/page.md': 'leverage synergy\n',
+  });
+  const { report } = json(['site'], dir);
+  assert.equal(report.config, path.join('brand', 'foundrkit.rules.json'));
+});
+
+test('a foundrkit-rules file that breaks the contract exits 2', () => {
+  const cases = [
+    [rulesFile([{ pattern: 'leverage', severity: 'error', source: 'manual' }], { version: '2' }), /"version" must be the string "1"/],
+    [rulesFile([{ pattern: 'leverage', severity: 'block', source: 'manual' }]), /"severity" must be "error" or "warn"/],
+    [rulesFile([{ pattern: 'leverage', severity: 'error' }]), /"source" must be one of/],
+    [rulesFile([{ severity: 'error', source: 'manual' }]), /"pattern" must be a non-empty string/],
+    [JSON.stringify({ contract: 'voice-profile', version: '1' }), /Only "foundrkit-rules" files hold lint rules/],
+  ];
+  for (const [content, message] of cases) {
+    const dir = project({ 'brand/foundrkit.rules.json': content, 'page.md': 'leverage\n' });
+    const res = cli(['page.md', '--warn-only'], dir);
+    assert.equal(res.code, 2, content);
+    assert.match(res.stderr, /not a valid foundrkit-rules v1 file/);
+    assert.match(res.stderr, message);
+  }
+});
+
+// The categorized format: {"$schema", "_comment", "<category>": [phrases]}.
+// Shaped like sample-foundrkit's forbidden.json. The phrases are examples of banned phrases.
+test('categorized forbidden.json: each array key becomes error rules in that category', () => {
+  const dir = project({
+    'forbidden.json': JSON.stringify({
+      $schema: './foundrkit.rules.json',
+      _comment: 'Categories are organizational only.',
+      globally_banned_words: ['leverage', 'game-changing'],
+      ai_era_clutter: ['In today\'s fast-paced', 'harness the power of'],
+      filler_modifiers: ['very'],
+    }),
+    'page.md': [
+      'Every step, very clear.',
+      'We leverage it. Leveraging is fine here.',
+      'A game-changing idea.',
+      'in today\'s fast-paced world, harness the power of.',
+      'We harness the power ofsome thing.',
+    ].join('\n') + '\n',
+  });
+  const { code, report } = json(['page.md'], dir);
+  assert.equal(code, 1);
+  const hits = report.results[0].hits.map((h) => [h.line, h.match, h.category, h.severity]);
+  assert.deepEqual(hits, [
+    [1, 'very', 'filler_modifiers', 'error'],
+    [2, 'leverage', 'globally_banned_words', 'error'],
+    [3, 'game-changing', 'globally_banned_words', 'error'],
+    [4, 'in today\'s fast-paced', 'ai_era_clutter', 'error'],
+    [4, 'harness the power of', 'ai_era_clutter', 'error'],
+    [5, 'harness the power of', 'ai_era_clutter', 'error'],
+  ]);
+});

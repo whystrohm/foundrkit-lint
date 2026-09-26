@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { checkRulesContract } = require('./contract');
 
 const DEFAULT_EXTENSIONS = ['.html', '.jsx', '.tsx', '.js', '.ts', '.md', '.mdx', '.txt'];
 
@@ -23,6 +24,8 @@ const DEFAULT_SKIP = [
   'foundrkit.config.*',
   '.foundrkitrc.json',
   'forbidden.json',
+  'foundrkit.rules.json',
+  'brand-lock.md',
   'BRAND.md',
   'CLAUDE.md',
 ];
@@ -123,10 +126,14 @@ const CANDIDATES = [
   '.foundrkitrc.json',
 ];
 
-// Lookup order:
+// The shared rules file that "foundrkit-lint --from-brand" writes.
+const BRAND_RULES = path.join('brand', 'foundrkit.rules.json');
+
+// Lookup order, first match wins:
 //   1. --config=PATH (relative to cwd)
-//   2. a config file in cwd
-//   3. a config file in each scanned directory (or the folder of a scanned file)
+//   2. a config file in cwd (CANDIDATES, in order)
+//   3. brand/foundrkit.rules.json in cwd
+//   4. a config file in each scanned directory (or the folder of a scanned file)
 function locateConfig({ cwd, explicitPath, searchDirs = [] }) {
   if (explicitPath) {
     const resolved = path.isAbsolute(explicitPath)
@@ -137,13 +144,47 @@ function locateConfig({ cwd, explicitPath, searchDirs = [] }) {
     }
     return resolved;
   }
-  for (const dir of [cwd, ...searchDirs]) {
+  for (const name of CANDIDATES) {
+    const full = path.join(cwd, name);
+    if (fs.existsSync(full)) return full;
+  }
+  const brandRules = path.join(cwd, BRAND_RULES);
+  if (fs.existsSync(brandRules)) return brandRules;
+  for (const dir of searchDirs) {
     for (const name of CANDIDATES) {
       const full = path.join(dir, name);
       if (fs.existsSync(full)) return full;
     }
   }
   return null;
+}
+
+// A single token matches as a whole word. A phrase with a space matches as a
+// case-insensitive substring. This is how the categorized forbidden.json
+// format is read by the linter it comes from.
+function categoryPattern(phrase) {
+  if (/\s/.test(phrase)) {
+    return new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  }
+  return compilePattern(phrase);
+}
+
+// {"$schema", "_comment", "<category>": ["phrase", ...], ...}
+// Every array-valued key becomes error rules with category = key.
+function categorizedRules(raw, filePath) {
+  const rules = [];
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.startsWith('_') || key.startsWith('$') || !Array.isArray(value)) continue;
+    value.forEach((phrase, i) => {
+      if (typeof phrase !== 'string' || !phrase.trim()) {
+        throw new Error(
+          `foundrkit-lint: "${key}" item #${i + 1} in ${filePath} must be a non-empty string`
+        );
+      }
+      rules.push({ pattern: categoryPattern(phrase.trim()), severity: 'error', suggestion: '', category: key });
+    });
+  }
+  return rules;
 }
 
 function loadConfig({ cwd, explicitPath, searchDirs }) {
@@ -165,11 +206,33 @@ function loadConfig({ cwd, explicitPath, searchDirs }) {
   }
   const raw = ext === '.js' || ext === '.cjs' ? loadFromJs(filePath) : loadFromJson(filePath);
 
-  const rawRules = raw.forbidden || raw.rules || raw.patterns || [];
-  if (!Array.isArray(rawRules)) {
-    throw new Error(`foundrkit-lint: "forbidden" in ${filePath} must be an array`);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`foundrkit-lint: ${filePath} must export an object`);
   }
-  const rules = rawRules.map(normaliseRule);
+
+  // A shared contract file. Check it before trusting it.
+  if (raw.contract !== undefined) {
+    const problems = raw.contract === 'foundrkit-rules'
+      ? checkRulesContract(raw)
+      : [`"contract" is ${JSON.stringify(raw.contract)}. Only "foundrkit-rules" files hold lint rules.`];
+    if (problems.length) {
+      throw new Error(
+        `foundrkit-lint: ${filePath} is not a valid foundrkit-rules v1 file:\n` +
+        problems.map((p) => `  - ${p}`).join('\n')
+      );
+    }
+  }
+
+  let rules;
+  const rawRules = raw.forbidden || raw.rules || raw.patterns;
+  if (rawRules !== undefined) {
+    if (!Array.isArray(rawRules)) {
+      throw new Error(`foundrkit-lint: "forbidden" in ${filePath} must be an array`);
+    }
+    rules = rawRules.map(normaliseRule);
+  } else {
+    rules = categorizedRules(raw, filePath);
+  }
 
   const extensions = Array.isArray(raw.extensions) && raw.extensions.length
     ? raw.extensions
@@ -182,4 +245,4 @@ function loadConfig({ cwd, explicitPath, searchDirs }) {
   return { rules, extensions, skip, source: filePath };
 }
 
-module.exports = { loadConfig, locateConfig, CANDIDATES, DEFAULT_EXTENSIONS, DEFAULT_SKIP, normaliseRule, compilePattern };
+module.exports = { loadConfig, locateConfig, CANDIDATES, BRAND_RULES, DEFAULT_EXTENSIONS, DEFAULT_SKIP, normaliseRule, compilePattern };
