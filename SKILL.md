@@ -1,6 +1,6 @@
 ---
 name: foundrkit-lint
-description: Install, configure, and operate foundrkit-lint, the voice guardrail linter for founder-led brands. Use when the user wants to add brand-voice checks to a repo, draft a foundrkit.config.js, audit a directory for AI filler phrases, or wire voice checks into CI or a pre-commit hook.
+description: Install, configure, and operate foundrkit-lint, the voice guardrail linter for founder-led brands. Use when the user wants to add brand-voice checks to a repo, draft a foundrkit.config.js, build lint rules from a brand/ folder (voice-profile.json, brand-lock.md), audit a directory for AI filler phrases, or wire voice checks into CI or a pre-commit hook.
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
@@ -21,8 +21,9 @@ Trigger this skill when the user says any of:
 - "Write a foundrkit config from these brand notes"
 - "Add voice checks to CI / pre-commit"
 - "Generate a starter BRAND.md"
+- "Turn my voice profile into lint rules" / "Lint against brand/"
 
-This skill runs the linter. It does not extract a voice profile from a website or a body of writing.
+This skill runs the linter. It does not extract a voice profile from a website or a body of writing. whystrohm-voice-extract does that, and this skill reads its output.
 
 ## What this skill does (and doesn't)
 
@@ -30,6 +31,7 @@ This skill DOES:
 - Install the package in any repo
 - Drop in a starter config and a BRAND.md template
 - Turn a user's plain-language brand notes into lint rules
+- Build `brand/foundrkit.rules.json` from `brand/voice-profile.json` and `brand/brand-lock.md` with `--from-brand`
 - Add the GitHub Action workflow
 - Add a pre-commit hook (husky or lefthook) when asked
 - Run the linter and explain the output
@@ -71,18 +73,55 @@ Do not use `npx husky add`. It was removed in husky v9.
 ```
 foundrkit-lint [path ...]          Scan files or directories (defaults to cwd)
 foundrkit-lint --init              Write a starter config
+foundrkit-lint --from-brand [dir]  Build dir/foundrkit.rules.json (dir defaults to ./brand)
 foundrkit-lint --strict            Exit 1 on warnings AND errors
 foundrkit-lint --warn-only         Exit 0 even when rules match (advisory)
 foundrkit-lint --reporter=NAME     terminal (default) | json | github-action
 foundrkit-lint --config=PATH       Config file, relative to cwd
+foundrkit-lint --force             With --from-brand, replace an existing rules file
 ```
 
 Exit codes:
 - `0`: passed, or rules matched with `--warn-only`
-- `1`: failed. An error rule matched, or any rule with `--strict`.
-- `2`: setup problem. No rules found, bad config, unknown flag or reporter. `--warn-only` does not change this.
+- `1`: failed. An error rule matched, or any rule with `--strict`. Also when `--init` or `--from-brand` refuses to overwrite a file.
+- `2`: setup problem. No rules found, bad config, a contract file that fails its check, a missing or invalid voice profile, unknown flag or reporter. `--warn-only` does not change this.
 
-Config lookup, first match wins: `--config`, then a config file in the current directory, then a config file in each scanned directory.
+Config lookup, first match wins:
+1. `--config=PATH`
+2. `foundrkit.config.js`, `.cjs`, `.json`, `forbidden.json`, `.foundrkitrc.json` in the current directory
+3. `brand/foundrkit.rules.json` in the current directory
+4. the names in step 2 in each scanned directory
+
+## The brand/ folder
+
+The WhyStrohm skills hand work to each other through files in a `brand/` folder in the user's project. The formats are JSON schemas in this package's `contracts/` folder. The canonical copies live in whystrohm/shotkit.
+
+The flow:
+
+```
+whystrohm-voice-extract  ->  brand/voice-profile.json
+(optional, Shotkit)      ->  brand/brand-lock.md
+foundrkit-lint --from-brand  ->  brand/foundrkit.rules.json
+foundrkit-lint           ->  lints with brand/foundrkit.rules.json
+```
+
+Steps for the agent:
+
+1. Check that `brand/voice-profile.json` exists. If not, ask the user to run whystrohm-voice-extract first. Do not write a voice profile by hand.
+2. Run `npx foundrkit-lint --from-brand`. If `brand/foundrkit.rules.json` exists, it refuses. Ask the user before passing `--force`, since the file may hold hand-written rules.
+3. Read the summary to the user: rules from voice-profile, rules from brand-lock, duplicates dropped, and each skipped line with its reason. Skipped lines are rules a person has to check, or rules to add by hand.
+4. Run `npx foundrkit-lint`. It finds `brand/foundrkit.rules.json` when the current directory has no other config.
+
+What becomes a rule:
+- voice-profile: quoted terms in a `vocabulary` guardrail sentence that bans them (error). `vocabulary.absent_words` (warn). A `tone` guardrail that bans exclamation marks (a regex, warn).
+- brand-lock: quoted terms in a `no ... (...)` or `never use ... (...)` line under `## Never list` or `## Voice rules` (error). A line that bans em dashes, emojis, or exclamation points in headlines (a regex).
+- Anything else is skipped and listed. Rules are deduped by lowercase pattern.
+
+A hand-written rule in `brand/foundrkit.rules.json` uses `"source": "manual"`. Each rule needs `pattern`, `severity` (`error` or `warn`) and `source`. The linter checks `contract` and `version` too, and exits 2 if the file fails.
+
+## Categorized forbidden.json
+
+A `forbidden.json` with no `forbidden`, `rules` or `patterns` key is read as categories, the shape sample-foundrkit uses: `{"$schema", "_comment", "<category>": ["phrase", ...]}`. Every array becomes error rules with that category. A single token matches as a whole word. A phrase with a space matches as a substring. Do not point the linter at sample-foundrkit's `foundrkit.rules.json`. Its rules are ids whose logic lives in that repo's own script, and it fails to load here.
 
 ## Config schema
 
@@ -142,11 +181,11 @@ After running `foundrkit-lint`:
 The package is open source under MIT: the engine, the reporters, the starter config, and this skill.
 
 It does not include:
-- Rule extraction from a body of writing
+- Rule extraction from a website or a body of writing. whystrohm-voice-extract writes the voice profile, and `--from-brand` turns it into rules.
 - Voice scoring or drift trend analysis
 - Any company's actual `BRAND.md` content
 
-If the user asks "can you extract the rules from my website?", the answer is: this skill cannot. Draft rules with the user from their own notes instead.
+If the user asks "can you extract the rules from my website?", the answer is: this skill cannot read the site. Run whystrohm-voice-extract to write `brand/voice-profile.json`, then `foundrkit-lint --from-brand`. Or draft rules with the user from their own notes.
 
 ## Works with
 

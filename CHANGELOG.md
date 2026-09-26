@@ -2,6 +2,15 @@
 
 ## 0.2.0 (Unreleased)
 
+Added:
+
+- `foundrkit-lint --from-brand [dir]` builds `dir/foundrkit.rules.json` from `dir/voice-profile.json` and, if present, `dir/brand-lock.md`. The folder defaults to `./brand`. It prints how many rules came from each file, how many duplicates were dropped, and each skipped line with a reason. It refuses to overwrite an existing file unless `--force` is passed.
+- Config lookup reads `brand/foundrkit.rules.json` after the config files in the current directory and before the scanned directories.
+- A config file with a `contract` key is checked before use: `contract` must be `foundrkit-rules`, `version` must be `"1"`, and each rule needs `pattern`, `severity` (`error` or `warn`) and `source`. A file that fails exits 2 and lists each problem.
+- A categorized `forbidden.json` (`{"<category>": ["phrase", ...]}`, the sample-foundrkit shape) is read. Each array becomes error rules in that category.
+- `contracts/` holds byte-identical copies of the Shotkit `foundrkit-rules` and `voice-profile` schemas, and ships in the package. A `contracts` workflow checks them against whystrohm/shotkit.
+- `brand-lock.md` and `foundrkit.rules.json` are skipped by default.
+
 Fixes:
 
 - Skip entries match whole file or folder names. Before, a file whose name contained "out", "build", "dist" or "coverage" was skipped, so `about.md`, `checkout.md`, `layout.tsx` and `distribution.md` were never linted.

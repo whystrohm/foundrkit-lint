@@ -32,7 +32,7 @@ Then the team grows. Contractors write blog posts. A marketing hire ships landin
 
 ## What it doesn't
 
-This package runs the rules you give it. It does not write rules from your existing writing. You write the rules, or start from the bundled starter config.
+This package runs the rules you give it. It does not read your website or your writing. You write the rules, start from the bundled starter config, or build them from a voice profile with `--from-brand` (below).
 
 ## Quick start
 
@@ -116,7 +116,7 @@ How patterns match:
 - In a JS config you can also pass a RegExp: `[/leverag(e|ing)/i, 'warn']`.
 - A rule that is not a string, array, or object with `pattern` stops the run with exit code 2.
 
-Default skips: `node_modules`, `.git`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.vercel`, `.cache`, `dist`, `build`, `out`, `coverage`, `_source`, `_archive`, the config files, `BRAND.md`, and `CLAUDE.md`. Files and folders that start with `.` are never scanned.
+Default skips: `node_modules`, `.git`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.vercel`, `.cache`, `dist`, `build`, `out`, `coverage`, `_source`, `_archive`, the config files, `foundrkit.rules.json`, `brand-lock.md`, `BRAND.md`, and `CLAUDE.md`. Files and folders that start with `.` are never scanned.
 
 ### ES module packages
 
@@ -135,23 +135,83 @@ If you don't want a JS config, use `foundrkit.config.json`, `forbidden.json`, or
 }
 ```
 
+### Categorized forbidden.json
+
+A `forbidden.json` with no `forbidden`, `rules` or `patterns` key is read as categories. This is the shape the sample-foundrkit repo uses. The phrases below are examples of banned phrases.
+
+```json
+{
+  "$schema": "./foundrkit.rules.json",
+  "_comment": "Categories are organizational only.",
+  "globally_banned_words": ["leverage", "synergy"],
+  "ai_era_clutter": ["harness the power of", "AI-powered"]
+}
+```
+
+- Every array-valued key becomes error rules. The key is the rule's category.
+- Keys that start with `_` or `$` are ignored.
+- A single token (no space) matches as a whole word, case-insensitive. `very` does not match "every".
+- A phrase with a space matches as a case-insensitive substring.
+
+The sample-foundrkit repo also has a `foundrkit.rules.json`. Do not point this linter at it. Its rules are ids like `no-em-dashes` whose logic is written into that repo's own script, and they have no `pattern`. Loading it stops the run with exit code 2. Add a `"\u2014"` rule for em dashes instead.
+
+This linter does not strip code blocks or front matter the way that script does.
+
 ### Where the config is found
 
 First match wins:
 
 1. `--config=PATH` (or `--config PATH`), relative to the current directory
 2. `foundrkit.config.js`, `foundrkit.config.cjs`, `foundrkit.config.json`, `forbidden.json`, or `.foundrkitrc.json` in the current directory
-3. The same names in each scanned directory, or the folder of a scanned file
+3. `brand/foundrkit.rules.json` in the current directory
+4. The names in step 2 in each scanned directory, or the folder of a scanned file
+
+## Rules from a brand folder
+
+The WhyStrohm skills share files through a `brand/` folder in your project. The formats are JSON schemas in [`contracts/`](./contracts/).
+
+The flow:
+
+1. `whystrohm-voice-extract` writes `brand/voice-profile.json` from your website.
+2. Optional: put a Shotkit brand lock at `brand/brand-lock.md`.
+3. `npx foundrkit-lint --from-brand` writes `brand/foundrkit.rules.json`.
+4. `npx foundrkit-lint` finds `brand/foundrkit.rules.json` and lints with it.
+
+```bash
+npx foundrkit-lint --from-brand            # reads ./brand
+npx foundrkit-lint --from-brand site/brand # another folder
+npx foundrkit-lint --from-brand --force    # replace an existing foundrkit.rules.json
+```
+
+What becomes a rule:
+
+| Source | Text | Rule |
+|---|---|---|
+| voice-profile | a `vocabulary` guardrail sentence that bans quoted terms, e.g. `Never use "solutions".` | each quoted term, error |
+| voice-profile | `vocabulary.absent_words` | each word, warn |
+| voice-profile | a `tone` guardrail that bans exclamation marks | `/!(?=\s\|$)/`, warn |
+| brand-lock | a `no ... ("a", "b")` or `never use ... ("a", "b")` line under `## Never list` or `## Voice rules` | each quoted term, error |
+| brand-lock | a line that bans em dashes | `/\u2014/`, error |
+| brand-lock | a line that bans emojis | an emoji range regex, error |
+| brand-lock | `no exclamation points in headlines` | a regex for markdown and HTML headings, warn |
+
+Everything else is skipped and printed with a reason, so nothing is dropped without a word. Rules are deduped by lowercase pattern, and the first one wins (voice-profile before brand-lock).
+
+The file is a `foundrkit-rules` v1 contract. `brand` is the brand lock's title, or the host of the voice profile's `url` when there is no brand lock. `generated_from` lists the files it came from. The command refuses to overwrite an existing file unless you pass `--force`. You can edit the file by hand. Mark hand-written rules `"source": "manual"`.
+
+When the linter loads any file with a `contract` key, it checks `contract`, `version` and each rule's `pattern`, `severity` (`error` or `warn`) and `source`. A file that fails exits 2 and lists each problem.
 
 ## CLI reference
 
 ```
 foundrkit-lint [path ...]          Scan files or directories (defaults to cwd)
 foundrkit-lint --init              Write a starter config
+foundrkit-lint --from-brand [dir]  Build dir/foundrkit.rules.json (dir defaults to ./brand)
 foundrkit-lint --strict            Exit 1 on warnings AND errors
 foundrkit-lint --warn-only         Exit 0 even when rules match (advisory)
 foundrkit-lint --reporter=NAME     terminal | json | github-action
 foundrkit-lint --config=PATH       Config file, relative to cwd
+foundrkit-lint --force             With --from-brand, replace an existing rules file
 foundrkit-lint --help              Show this help
 ```
 
@@ -160,8 +220,8 @@ Exit codes:
 | Code | Meaning |
 |------|---------|
 | `0` | Passed, or rules matched with `--warn-only` |
-| `1` | Failed: an error rule matched, or any rule with `--strict` |
-| `2` | Setup problem: no rules found, bad config, unknown flag or reporter. `--warn-only` does not change this. |
+| `1` | Failed: an error rule matched, or any rule with `--strict`. Also: `--init` or `--from-brand` refused to overwrite a file. |
+| `2` | Setup problem: no rules found, bad config, a contract file that fails its check, a missing or invalid voice profile, unknown flag or reporter. `--warn-only` does not change this. |
 
 ## Reporters
 
@@ -183,6 +243,8 @@ Exit codes:
 npm test            # node:test suite, no dependencies
 npm run lint:self   # lint this repo's docs and source for em dashes
 ```
+
+The `contracts` workflow checks that the schemas in `contracts/` are valid, that `examples/foundrkit-rules.example.json` passes its schema, and that each schema is byte-identical to the canonical copy in whystrohm/shotkit.
 
 ## Philosophy
 
