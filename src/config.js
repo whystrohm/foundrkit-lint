@@ -20,14 +20,18 @@ const DEFAULT_SKIP = [
   'coverage',
   '_source',
   '_archive',
-  'foundrkit.config.js',
+  'foundrkit.config.*',
+  '.foundrkitrc.json',
   'forbidden.json',
   'BRAND.md',
   'CLAUDE.md',
 ];
 
 function compilePattern(raw) {
-  if (raw instanceof RegExp) return raw;
+  if (raw instanceof RegExp) {
+    // The matcher loops with exec(), which needs the global flag.
+    return raw.global ? raw : new RegExp(raw.source, raw.flags + 'g');
+  }
   if (typeof raw !== 'string') {
     throw new TypeError(`foundrkit-lint: pattern must be string or RegExp, got ${typeof raw}`);
   }
@@ -37,13 +41,31 @@ function compilePattern(raw) {
     const flags = raw.slice(lastSlash + 1) || 'gi';
     return new RegExp(body, flags.includes('g') ? flags : flags + 'g');
   }
+  if (!raw.length) {
+    throw new Error('foundrkit-lint: empty pattern string in rules');
+  }
+  // Plain strings match as whole words, case-insensitive.
+  // The \b word boundary is only added on a side that starts or ends with a
+  // word character. So "delve" becomes /\bdelve\b/gi, while a plain em dash
+  // string ("\u2014") or "--" matches anywhere.
   const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\b${escaped}\\b`, 'gi');
+  const lead = /^\w/.test(raw) ? '\\b' : '';
+  const tail = /\w$/.test(raw) ? '\\b' : '';
+  return new RegExp(`${lead}${escaped}${tail}`, 'gi');
 }
 
-function normaliseRule(raw) {
-  if (!raw) return null;
+function normaliseRule(raw, index) {
+  // A bare string or RegExp is shorthand for [pattern, 'error'].
+  if (typeof raw === 'string' || raw instanceof RegExp) {
+    return {
+      pattern: compilePattern(raw),
+      severity: 'error',
+      suggestion: '',
+      category: 'forbidden',
+    };
+  }
   if (Array.isArray(raw)) {
+    if (!raw.length) throw new Error(`foundrkit-lint: rule #${index + 1} is an empty array`);
     const [pattern, severity, suggestion] = raw;
     return {
       pattern: compilePattern(pattern),
@@ -52,8 +74,13 @@ function normaliseRule(raw) {
       category: 'forbidden',
     };
   }
+  if (!raw || typeof raw !== 'object' || !raw.pattern) {
+    throw new Error(
+      `foundrkit-lint: rule #${index + 1} is not valid: ${JSON.stringify(raw)}. ` +
+      'Use a string, a [pattern, severity, suggestion] array, or {pattern, severity, suggestion}.'
+    );
+  }
   const pattern = raw.pattern;
-  if (!pattern) return null;
   return {
     pattern: compilePattern(pattern),
     severity: raw.severity === 'warn' ? 'warn' : 'error',
@@ -64,14 +91,43 @@ function normaliseRule(raw) {
 
 function loadFromJs(filePath) {
   delete require.cache[require.resolve(filePath)];
-  return require(filePath);
+  try {
+    return require(filePath);
+  } catch (err) {
+    const esm = err && (
+      err.code === 'ERR_REQUIRE_ESM' ||
+      err.code === 'ERR_REQUIRE_ASYNC_MODULE' ||
+      /module is not defined in ES module scope|Cannot use import statement|Unexpected token 'export'/.test(err.message)
+    );
+    if (esm) {
+      throw new Error(
+        `foundrkit-lint: could not load ${filePath} as CommonJS. ` +
+        'This project looks like an ES module package ("type": "module"). ' +
+        'Rename the config to foundrkit.config.cjs and keep module.exports = { ... }, ' +
+        'or use foundrkit.config.json.'
+      );
+    }
+    throw err;
+  }
 }
 
 function loadFromJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function locateConfig({ cwd, explicitPath }) {
+const CANDIDATES = [
+  'foundrkit.config.js',
+  'foundrkit.config.cjs',
+  'foundrkit.config.json',
+  'forbidden.json',
+  '.foundrkitrc.json',
+];
+
+// Lookup order:
+//   1. --config=PATH (relative to cwd)
+//   2. a config file in cwd
+//   3. a config file in each scanned directory (or the folder of a scanned file)
+function locateConfig({ cwd, explicitPath, searchDirs = [] }) {
   if (explicitPath) {
     const resolved = path.isAbsolute(explicitPath)
       ? explicitPath
@@ -81,22 +137,17 @@ function locateConfig({ cwd, explicitPath }) {
     }
     return resolved;
   }
-  const candidates = [
-    'foundrkit.config.js',
-    'foundrkit.config.cjs',
-    'foundrkit.config.json',
-    'forbidden.json',
-    '.foundrkitrc.json',
-  ];
-  for (const name of candidates) {
-    const full = path.join(cwd, name);
-    if (fs.existsSync(full)) return full;
+  for (const dir of [cwd, ...searchDirs]) {
+    for (const name of CANDIDATES) {
+      const full = path.join(dir, name);
+      if (fs.existsSync(full)) return full;
+    }
   }
   return null;
 }
 
-function loadConfig({ cwd, explicitPath }) {
-  const filePath = locateConfig({ cwd, explicitPath });
+function loadConfig({ cwd, explicitPath, searchDirs }) {
+  const filePath = locateConfig({ cwd, explicitPath, searchDirs });
   if (!filePath) {
     return {
       rules: [],
@@ -106,10 +157,19 @@ function loadConfig({ cwd, explicitPath }) {
     };
   }
   const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.mjs') {
+    throw new Error(
+      `foundrkit-lint: ${filePath} is an .mjs file. ESM configs are not supported. ` +
+      'Use foundrkit.config.cjs with module.exports = { ... }, or foundrkit.config.json.'
+    );
+  }
   const raw = ext === '.js' || ext === '.cjs' ? loadFromJs(filePath) : loadFromJson(filePath);
 
   const rawRules = raw.forbidden || raw.rules || raw.patterns || [];
-  const rules = rawRules.map(normaliseRule).filter(Boolean);
+  if (!Array.isArray(rawRules)) {
+    throw new Error(`foundrkit-lint: "forbidden" in ${filePath} must be an array`);
+  }
+  const rules = rawRules.map(normaliseRule);
 
   const extensions = Array.isArray(raw.extensions) && raw.extensions.length
     ? raw.extensions
@@ -122,4 +182,4 @@ function loadConfig({ cwd, explicitPath }) {
   return { rules, extensions, skip, source: filePath };
 }
 
-module.exports = { loadConfig, DEFAULT_EXTENSIONS, DEFAULT_SKIP, normaliseRule, compilePattern };
+module.exports = { loadConfig, locateConfig, CANDIDATES, DEFAULT_EXTENSIONS, DEFAULT_SKIP, normaliseRule, compilePattern };

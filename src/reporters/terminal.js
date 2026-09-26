@@ -11,16 +11,16 @@ const DIM    = '\x1b[2m';
 const GREEN  = '\x1b[32m';
 
 module.exports = function terminalReporter(report) {
-  const { targetDir, filesScanned, filesWithIssues, totalErrors, totalWarns, results, cwd } = report;
+  const { targets, filesScanned, filesWithIssues, totalErrors, totalWarns, results, cwd } = report;
 
-  const relTarget = path.relative(cwd, targetDir) || '.';
+  const relTarget = targets.map((t) => path.relative(cwd, t) || '.').join(', ');
   process.stdout.write(`\n${BOLD}${CYAN}foundrkit-lint${RESET}  ·  scanning ${filesScanned} files in ${relTarget}\n\n`);
 
   for (const { file, hits } of results) {
     const relPath = path.relative(cwd, file);
     process.stdout.write(`${BOLD}${relPath}${RESET}\n`);
     for (const hit of hits) {
-      const icon  = hit.severity === 'error' ? `${RED}✕` : `${YELLOW}⚠`;
+      const icon  = hit.severity === 'error' ? `${RED}✕` : `${YELLOW}!`;
       const label = hit.severity === 'error' ? `${RED}ERROR` : `${YELLOW}WARN `;
       process.stdout.write(`  ${icon} ${label}${RESET}  line ${DIM}${hit.line}${RESET}  matched: ${BOLD}"${hit.match}"${RESET}\n`);
       process.stdout.write(`  ${DIM}${hit.text}${RESET}\n`);
@@ -46,6 +46,6 @@ module.exports = function terminalReporter(report) {
   if (totalErrors > 0) {
     process.stdout.write(`${RED}${BOLD}✕ Voice lint failed.${RESET} Fix errors before deploying.\n\n`);
   } else {
-    process.stdout.write(`${YELLOW}${BOLD}⚠ Warnings only — review before deploying.${RESET}\n\n`);
+    process.stdout.write(`${YELLOW}${BOLD}! Warnings only. Review before deploying.${RESET}\n\n`);
   }
 };

@@ -3,11 +3,13 @@
 const path = require('path');
 
 module.exports = function jsonReporter(report) {
-  const { targetDir, filesScanned, filesWithIssues, totalErrors, totalWarns, results, cwd } = report;
+  const { targets, configPath, filesScanned, filesWithIssues, totalErrors, totalWarns, results, cwd } = report;
   const out = {
     tool: 'foundrkit-lint',
     version: require('../../package.json').version,
-    target: path.relative(cwd, targetDir) || '.',
+    target: targets.map((t) => path.relative(cwd, t) || '.').join(', '),
+    targets: targets.map((t) => path.relative(cwd, t) || '.'),
+    config: configPath ? path.relative(cwd, configPath) : null,
     summary: {
       filesScanned,
       filesWithIssues,

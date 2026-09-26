@@ -17,7 +17,7 @@ module.exports = function githubActionReporter(report) {
     for (const hit of hits) {
       const level = hit.severity === 'error' ? 'error' : 'warning';
       const title = hit.severity === 'error' ? 'Voice violation' : 'Voice drift';
-      const message = `Matched "${hit.match}"` + (hit.suggestion ? ` — ${hit.suggestion}` : '');
+      const message = `Matched "${hit.match}"` + (hit.suggestion ? `: ${hit.suggestion}` : '');
       process.stdout.write(
         `::${level} file=${relPath},line=${hit.line},col=${hit.column},title=${escape(title)}::${escape(message)}\n`
       );
