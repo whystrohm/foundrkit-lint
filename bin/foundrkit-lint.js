@@ -14,22 +14,27 @@ Usage:
   foundrkit-lint [path ...]          Scan files or directories (defaults to current)
   foundrkit-lint --init              Drop a starter config into this repo
                                      (foundrkit.config.cjs in "type": "module" packages)
+  foundrkit-lint --from-brand [dir]  Build dir/foundrkit.rules.json from dir/voice-profile.json
+                                     and dir/brand-lock.md (dir defaults to ./brand)
 
 Flags:
   --strict          Exit 1 on warnings AND errors (block deploys)
   --warn-only       Exit 0 even when rules match (advisory mode)
   --reporter=NAME   Output format: terminal (default), json, github-action
   --config=PATH     Config file, relative to the current directory
+  --force           With --from-brand, replace an existing foundrkit.rules.json
   --help, -h        Show this help
 
 Config lookup (first match wins):
   1. --config=PATH
   2. foundrkit.config.js, .cjs, .json, forbidden.json or .foundrkitrc.json in the current directory
-  3. the same names in each scanned directory
+  3. brand/foundrkit.rules.json in the current directory
+  4. the names in step 2 in each scanned directory
 
 Exit codes:
   0  passed (or --warn-only)
-  1  failed: an error rule matched (or any rule, with --strict)
+  1  failed: an error rule matched (or any rule, with --strict),
+     or --init / --from-brand refused to overwrite a file
   2  setup problem: no rules, bad config, unknown flag
 
 Examples:
@@ -65,6 +70,20 @@ if (args.includes('--init')) {
   console.log(`Wrote ${dest}`);
   console.log(`Next: edit the file, then run "foundrkit-lint".`);
   process.exit(0);
+}
+
+const fromBrandAt = args.indexOf('--from-brand');
+if (fromBrandAt !== -1) {
+  const { fromBrand } = require('../src/brand');
+  const rest = args.filter((a, i) => i !== fromBrandAt);
+  const force = rest.includes('--force');
+  const positional = rest.filter((a) => a !== '--force');
+  const unknown = positional.filter((a) => a.startsWith('-'));
+  if (unknown.length || positional.length > 1) {
+    console.error(`foundrkit-lint: --from-brand takes one folder and --force. Got: ${positional.join(' ')}`);
+    process.exit(2);
+  }
+  process.exit(fromBrand({ cwd: process.cwd(), dir: positional[0] || 'brand', force }));
 }
 
 const exitCode = run({

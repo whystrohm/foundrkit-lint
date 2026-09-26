@@ -448,3 +448,117 @@ test('categorized forbidden.json: each array key becomes error rules in that cat
     [5, 'harness the power of', 'ai_era_clutter', 'error'],
   ]);
 });
+
+// ─── --from-brand ──────────────────────────────────────────────────────
+
+function brandProject(extra = {}) {
+  return project({
+    'brand/voice-profile.json': fs.readFileSync(path.join(FIXTURES, 'brand', 'voice-profile.json'), 'utf8'),
+    'brand/brand-lock.md': fs.readFileSync(path.join(FIXTURES, 'brand', 'brand-lock.md'), 'utf8'),
+    ...extra,
+  });
+}
+
+function readRules(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, 'brand', 'foundrkit.rules.json'), 'utf8'));
+}
+
+test('--from-brand builds a valid foundrkit-rules file', () => {
+  const dir = brandProject();
+  const res = cli(['--from-brand'], dir);
+  assert.equal(res.code, 0, res.stderr);
+  const doc = readRules(dir);
+  assert.deepEqual(schemaErrors(RULES_SCHEMA, doc), []);
+  assert.equal(doc.brand, 'WhyStrohm');
+  assert.deepEqual(doc.generated_from, ['brand/voice-profile.json', 'brand/brand-lock.md']);
+
+  const find = (p) => doc.rules.find((r) => r.pattern === p);
+  // Quoted terms in the vocabulary guardrail. Examples of banned words from the fixture.
+  for (const word of ['solutions', 'synergy', 'world-class']) {
+    assert.equal(find(word).severity, 'error', word);
+    assert.equal(find(word).source, 'voice-profile', word);
+  }
+  // The tone guardrail on exclamation marks.
+  assert.equal(find('/!(?=\\s|$)/').source, 'voice-profile');
+  // brand-lock: em dash, and quoted hype words.
+  assert.equal(find('/\\u2014/').source, 'brand-lock');
+  assert.equal(find('game-changing').source, 'brand-lock');
+  assert.equal(find('kind of').severity, 'error');
+  // Dedupe is by lowercase pattern.
+  const keys = doc.rules.map((r) => r.pattern.toLowerCase());
+  assert.equal(new Set(keys).size, keys.length);
+  // Nothing is dropped silently.
+  assert.match(res.stdout, /rules from voice-profile/);
+  assert.match(res.stdout, /rules from brand-lock/);
+  assert.match(res.stdout, /skipped/);
+  assert.match(res.stdout, /Keep sentences under 14 words/);
+  assert.match(res.stdout, /never show an empty frame/);
+});
+
+test('--from-brand reads absent_words as warn rules', () => {
+  const profile = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'brand', 'voice-profile.json'), 'utf8'));
+  profile.guardrails = profile.guardrails.filter((g) => g.category !== 'vocabulary');
+  const dir = project({ 'brand/voice-profile.json': JSON.stringify(profile) });
+  assert.equal(cli(['--from-brand'], dir).code, 0);
+  const doc = readRules(dir);
+  assert.equal(doc.brand, 'northwind.example');
+  assert.deepEqual(doc.generated_from, ['brand/voice-profile.json']);
+  const solutions = doc.rules.find((r) => r.pattern === 'solutions');
+  assert.equal(solutions.severity, 'warn');
+});
+
+test('--from-brand refuses to overwrite without --force', () => {
+  const dir = brandProject({ 'brand/foundrkit.rules.json': '{"keep": true}\n' });
+  const res = cli(['--from-brand'], dir);
+  assert.equal(res.code, 1);
+  assert.match(res.stderr, /Refusing to overwrite/);
+  assert.equal(fs.readFileSync(path.join(dir, 'brand', 'foundrkit.rules.json'), 'utf8'), '{"keep": true}\n');
+  assert.equal(cli(['--from-brand', '--force'], dir).code, 0);
+  assert.equal(readRules(dir).contract, 'foundrkit-rules');
+});
+
+test('--from-brand takes a folder argument', () => {
+  const dir = project({
+    'voice/voice-profile.json': fs.readFileSync(path.join(FIXTURES, 'brand', 'voice-profile.json'), 'utf8'),
+  });
+  const res = cli(['--from-brand', 'voice'], dir);
+  assert.equal(res.code, 0, res.stderr);
+  assert.ok(fs.existsSync(path.join(dir, 'voice', 'foundrkit.rules.json')));
+  assert.match(res.stdout, /--config=voice\/foundrkit\.rules\.json/);
+});
+
+test('--from-brand exits 2 on a missing or wrong voice profile', () => {
+  const missing = cli(['--from-brand'], project({ 'page.md': 'x\n' }));
+  assert.equal(missing.code, 2);
+  assert.match(missing.stderr, /voice-profile\.json not found/);
+
+  const wrong = project({ 'brand/voice-profile.json': JSON.stringify({ contract: 'voice-profile', version: '2' }) });
+  const res = cli(['--from-brand'], wrong);
+  assert.equal(res.code, 2);
+  assert.match(res.stderr, /not a valid voice-profile v1 file/);
+  assert.ok(!fs.existsSync(path.join(wrong, 'brand', 'foundrkit.rules.json')));
+});
+
+test('linting with the generated rules catches a banned word and an em dash', () => {
+  const dir = brandProject({
+    'page.md': [
+      'We sell solutions.',
+      'One step \u2014 then the next.',
+      'We plan every shoot before we book it.',
+    ].join('\n') + '\n',
+  });
+  assert.equal(cli(['--from-brand'], dir).code, 0);
+  const { code, report } = json(['page.md'], dir);
+  assert.equal(code, 1);
+  assert.equal(report.config, path.join('brand', 'foundrkit.rules.json'));
+  const hits = report.results[0].hits.map((h) => [h.line, h.match, h.severity]);
+  assert.deepEqual(hits, [[1, 'solutions', 'error'], [2, '\u2014', 'error']]);
+});
+
+test('brand-lock.md is skipped when a brand folder is scanned', () => {
+  const dir = brandProject();
+  assert.equal(cli(['--from-brand'], dir).code, 0);
+  const { code, report } = json(['.'], dir);
+  assert.equal(code, 0);
+  assert.equal(report.summary.filesScanned, 0);
+});
