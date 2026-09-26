@@ -184,8 +184,8 @@ test('plain word strings still match whole words only', () => {
 });
 
 test('em dash: plain string and regex literal both match', () => {
-  const text = 'One — two.\nthree—four.\nfive - six -- seven.\n';
-  for (const rule of ['—', '/\\u2014/g', '/—/']) {
+  const text = 'One \u2014 two.\nthree\u2014four.\nfive - six -- seven.\n';
+  for (const rule of ['\u2014', '/\\u2014/g', '/\u2014/']) {
     const dir = project({ 'foundrkit.config.js': config([[rule, 'error', 'Use a comma.']]), 'page.md': text });
     const { code, report } = json(['.'], dir);
     assert.equal(code, 1, `rule ${JSON.stringify(rule)}`);

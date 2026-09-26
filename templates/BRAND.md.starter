@@ -56,6 +56,5 @@ Things that get a piece killed, not edited.
 
 ---
 
-_This file pairs with `foundrkit.config.js` (the lint rules) and `forbidden.json` (the runtime list).
-The full extracted rule set comes from running [Foundrkit Pro](https://whystrohm.com/scan) on the
-founder's existing writing._
+_This file pairs with `foundrkit.config.js` (the lint rules). Every hard rule in section 4 and 7
+that can be written as a phrase or pattern belongs in that config._

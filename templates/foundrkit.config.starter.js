@@ -1,17 +1,14 @@
 /**
  * foundrkit.config.js
  *
- * This is the STARTER config — a minimal set of generic AI-slop phrases that
- * almost every founder-led brand wants to keep out of their copy.
+ * Starter config. A short list of generic AI filler phrases that most
+ * founder-led brands keep out of their copy. The phrases below are listed
+ * here on purpose, as examples of what to ban.
  *
- * It is intentionally small. A real voice — the kind that turns your team's
- * output into something that sounds like the founder — is forty-plus rules
- * extracted from how *you* actually write.
+ * Edit this file. Add the phrases your founder never says. Remove the ones
+ * that fit your voice. Anything in the list gets linted.
  *
- *   Get that custom kit:  https://whystrohm.com/scan
- *
- * Until then, edit this file. Add phrases. Remove ones that fit your voice.
- * Anything in the file gets linted. Anything you delete is on you.
+ * In a package with "type": "module", name this file foundrkit.config.cjs.
  */
 
 module.exports = {
@@ -21,10 +18,16 @@ module.exports = {
   // Extra paths to skip beyond the defaults (node_modules, .git, dist, etc.)
   skip: [],
 
-  // Rules: [pattern, severity, suggestion]
-  //  - pattern can be a string (auto-wrapped in \b...\b/gi) or a "/regex/flags" string
-  //  - severity: 'error' (blocks --strict deploys) or 'warn' (advisory)
+  // Rules: [pattern, severity, suggestion], or a bare 'pattern' string (severity 'error')
+  //  - pattern: a plain string, matched case-insensitive as a whole word,
+  //    or a "/regex/flags" string, or a RegExp
+  //  - severity: 'error' (exit 1) or 'warn' (exit 1 only with --strict)
   //  - suggestion: shown to the writer; keep it short
+  //
+  // Example: ban the em dash. A plain string that starts and ends with
+  // punctuation matches anywhere, so either line works:
+  //    ['\u2014', 'error', 'Use a comma, colon, or period.'],
+  //    ['/\\u2014/g', 'error', 'Use a comma, colon, or period.'],
   forbidden: [
     // ─── AI slop ──────────────────────────────────────────────────────────
     ['delve',                  'error', 'Cut it or say "get into".'],
