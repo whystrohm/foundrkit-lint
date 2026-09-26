@@ -30,6 +30,7 @@
     "bin",
     "src",
     "templates",
+    "contracts",
     "README.md",
     "SKILL.md",
     "CHANGELOG.md",
