@@ -1,7 +1,7 @@
 {
   "name": "foundrkit-lint",
-  "version": "0.1.0",
-  "description": "Brand voice linter for founder-led companies. Catches AI slop and off-brand drift before it ships. Rules-as-code, CI-ready, zero dependencies.",
+  "version": "0.2.0",
+  "description": "Brand voice linter for founder-led companies. Flags AI filler and off-brand phrases. Rules in a config file, runs in CI, zero dependencies.",
   "keywords": [
     "lint",
     "brand-voice",
