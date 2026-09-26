@@ -31,13 +31,15 @@
     "src",
     "templates",
     "README.md",
+    "SKILL.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   },
   "scripts": {
-    "test": "node bin/foundrkit-lint.js examples/ --warn-only",
-    "lint:self": "node bin/foundrkit-lint.js src/ --warn-only"
+    "test": "node --test test/cli.test.js",
+    "lint:self": "node bin/foundrkit-lint.js README.md SKILL.md CHANGELOG.md bin src templates --config=test/self.config.cjs"
   }
 }

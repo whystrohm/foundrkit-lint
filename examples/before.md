@@ -1,4 +1,4 @@
-# Before — the unlinted draft
+# Before: the unlinted draft (example of bad copy)
 
 In conclusion, we believe our robust, comprehensive platform will leverage cutting-edge AI to unlock seamless workflows for your team. It's important to note that this is a true game-changer — a paradigm shift moving forward.
 
