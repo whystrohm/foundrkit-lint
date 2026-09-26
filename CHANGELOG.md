@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (Unreleased)
+## 0.2.0 (2026-09-26)
 
 Added:
 
@@ -35,7 +35,7 @@ Docs:
 
 - Install from GitHub: `npm install --save-dev github:whystrohm/foundrkit-lint`. The package is not on the npm registry.
 - Pre-commit steps use husky v9.
-- `package.json` now ships `SKILL.md` and `CHANGELOG.md`.
+- The package now ships `SKILL.md` and `CHANGELOG.md` (listed in `package.json` `files`).
 - Removed client names, claims about a paid scan, and em dashes.
 
 ## 0.1.0 (2026-05-25)
